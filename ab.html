@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apache Bench (ab) 报告解析器 - shadcn/ui 风格</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* slate-50, shadcn-like background */
+            color: #0f172a; /* slate-900, shadcn-like foreground */
+        }
+
+        /* Custom scrollbar for webkit browsers (optional, for a more polished look) */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9; /* slate-100 */
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; /* slate-300 */
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; /* slate-400 */
+        }
+
+        /* Chart.js tooltip custom styling (optional) */
+        .chartjs-tooltip {
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border-radius: 4px;
+            padding: 6px 8px;
+            font-size: 12px;
+        }
+        .chart-container { /* Ensure chart is responsive within its container */
+            position: relative;
+            width: 100%;
+            height: 350px; /* Adjust as needed, or manage via aspect ratio in JS */
+            background-color: white; /* Added background for consistency if chart is outside a card */
+            padding: 1.5rem; /* p-6 */
+            border-radius: 0.75rem; /* rounded-lg */
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1); /* shadow */
+            border: 1px solid #e2e8f0; /* border-slate-200 */
+            margin-top: 1.5rem; /* mt-6, space between table and chart */
+        }
+         @media (min-width: 768px) {
+            .chart-container {
+                height: 400px;
+            }
+        }
+    </style>
+</head>
+<body class="min-h-screen antialiased">
+    <div class="container mx-auto max-w-5xl px-4 py-8 md:py-12">
+        <header class="mb-10 text-center">
+            <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-slate-900">Apache Bench (ab) 报告解析器</h1>
+            <p class="text-lg text-slate-600 mt-2">粘贴 ab 输出，查看结构化数据和可视化图表。</p>
+        </header>
+
+        <div class="bg-white p-6 md:p-8 rounded-xl shadow-lg border border-slate-200 mb-10">
+            <label for="abOutput" class="block text-sm font-medium text-slate-700 mb-2">粘贴 ab 输出内容:</label>
+            <textarea id="abOutput" rows="15" class="block w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-3 px-4 placeholder-slate-400" placeholder="在这里粘贴 ab 的完整输出..."></textarea>
+            <button id="parseButton" class="mt-6 w-full inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700 transition-colors duration-150">
+                解析报告并生成图表
+            </button>
+        </div>
+
+        <div id="errorMessage" class="hidden p-4 mb-8 text-sm rounded-md bg-red-50 border border-red-200 text-red-700"></div>
+
+        <div id="results" class="hidden space-y-10">
+            <h2 class="text-2xl font-semibold tracking-tight text-slate-800 pb-3 border-b border-slate-200">解析结果</h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white p-6 rounded-lg shadow border border-slate-200">
+                    <h3 class="text-lg font-medium text-slate-800 mb-4">服务器信息</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <p class="text-xs text-slate-500">服务器软件</p>
+                            <p id="serverSoftware" class="text-base font-medium text-slate-700">-</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-500">服务器主机名</p>
+                            <p id="serverHostname" class="text-base font-medium text-slate-700">-</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-500">服务器端口</p>
+                            <p id="serverPort" class="text-base font-medium text-slate-700">-</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow border border-slate-200">
+                    <h3 class="text-lg font-medium text-slate-800 mb-4">文档信息</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <p class="text-xs text-slate-500">文档路径</p>
+                            <p id="documentPath" class="text-base font-medium text-slate-700">-</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-500">文档长度</p>
+                            <p id="documentLength" class="text-base font-medium text-slate-700">-</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <section id="testSummary">
+                <h3 class="text-xl font-semibold text-slate-800 mb-5">测试摘要</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                    <div class="bg-white p-5 rounded-lg shadow border border-slate-200">
+                        <p class="text-sm text-slate-500 mb-1">并发级别</p>
+                        <p id="concurrencyLevel" class="text-2xl font-semibold text-slate-900">-</p>
+                    </div>
+                    <div class="bg-white p-5 rounded-lg shadow border border-slate-200">
+                        <p class="text-sm text-slate-500 mb-1">测试总耗时</p>
+                        <p><span id="timeTaken" class="text-2xl font-semibold text-slate-900">-</span><span class="text-sm text-slate-600 ml-1">秒</span></p>
+                    </div>
+                    <div class="bg-white p-5 rounded-lg shadow border border-slate-200">
+                        <p class="text-sm text-slate-500 mb-1">完成的请求数</p>
+                        <p id="completeRequests" class="text-2xl font-semibold text-slate-900">-</p>
+                    </div>
+                    <div class="bg-white p-5 rounded-lg shadow border border-slate-200">
+                        <p class="text-sm text-slate-500 mb-1">失败的请求数</p>
+                        <p id="failedRequests" class="text-2xl font-semibold text-red-600">-</p>
+                    </div>
+                    <div class="bg-white p-5 rounded-lg shadow border border-slate-200">
+                        <p class="text-sm text-slate-500 mb-1">每秒请求数 (RPS)</p>
+                        <p><span id="requestsPerSecond" class="text-2xl font-semibold text-slate-900">-</span><span class="text-sm text-slate-600 ml-1">个/秒</span></p>
+                    </div>
+                     <div class="bg-white p-5 rounded-lg shadow border border-slate-200">
+                        <p class="text-sm text-slate-500 mb-1">平均每请求耗时 (所有并发)</p>
+                        <p><span id="timePerRequestConcurrent" class="text-2xl font-semibold text-slate-900">-</span><span class="text-sm text-slate-600 ml-1">毫秒</span></p>
+                    </div>
+                    <div class="bg-white p-5 rounded-lg shadow border border-slate-200">
+                        <p class="text-sm text-slate-500 mb-1">平均每请求耗时 (单个)</p>
+                        <p><span id="timePerRequestSingle" class="text-2xl font-semibold text-slate-900">-</span><span class="text-sm text-slate-600 ml-1">毫秒</span></p>
+                    </div>
+                    <div class="bg-white p-5 rounded-lg shadow border border-slate-200">
+                        <p class="text-sm text-slate-500 mb-1">传输速率</p>
+                        <p><span id="transferRate" class="text-2xl font-semibold text-slate-900">-</span><span class="text-sm text-slate-600 ml-1">Kbytes/sec</span></p>
+                    </div>
+                </div>
+            </section>
+
+            <section id="connectionTimesSection">
+                <h3 class="text-xl font-semibold text-slate-800 mb-5">连接时间 (毫秒)</h3>
+                <div class="overflow-x-auto bg-white rounded-lg shadow border border-slate-200">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">指标</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">最小 (min)</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">平均 (mean)</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">标准差 (sd)</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">中位数 (median)</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">最大 (max)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="connectionTimesTableBody" class="bg-white divide-y divide-slate-200">
+                            </tbody>
+                    </table>
+                </div>
+                <div class="chart-container">
+                    <canvas id="connectionTimesBarChart"></canvas>
+                </div>
+            </section>
+
+            <section id="percentageServedSection">
+                <h3 class="text-xl font-semibold text-slate-800 mb-5">响应时间百分比分布 (毫秒)</h3>
+                 <div class="overflow-x-auto bg-white rounded-lg shadow border border-slate-200">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">百分比</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">耗时 (ms)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="percentageServedTableBody" class="bg-white divide-y divide-slate-200">
+                            </tbody>
+                    </table>
+                </div>
+                <div class="chart-container">
+                    <canvas id="responseTimeDistributionChart"></canvas>
+                </div>
+            </section>
+        </div>
+         <footer class="text-center mt-16 py-8 border-t border-slate-200">
+            <p class="text-sm text-slate-500">Apache Bench (ab) 报告解析器 &copy; 2024-2025</p>
+        </footer>
+    </div>
+
+    <script>
+        // DOM 元素获取
+        const abOutputTextarea = document.getElementById('abOutput');
+        const parseButton = document.getElementById('parseButton');
+        const resultsDiv = document.getElementById('results');
+        const errorMessageDiv = document.getElementById('errorMessage');
+
+        // 各个指标的显示元素
+        const serverSoftwareEl = document.getElementById('serverSoftware');
+        const serverHostnameEl = document.getElementById('serverHostname');
+        const serverPortEl = document.getElementById('serverPort');
+        const documentPathEl = document.getElementById('documentPath');
+        const documentLengthEl = document.getElementById('documentLength');
+        const concurrencyLevelEl = document.getElementById('concurrencyLevel');
+        const timeTakenEl = document.getElementById('timeTaken');
+        const completeRequestsEl = document.getElementById('completeRequests');
+        const failedRequestsEl = document.getElementById('failedRequests');
+        const requestsPerSecondEl = document.getElementById('requestsPerSecond');
+        const timePerRequestConcurrentEl = document.getElementById('timePerRequestConcurrent');
+        const timePerRequestSingleEl = document.getElementById('timePerRequestSingle');
+        const transferRateEl = document.getElementById('transferRate');
+        const connectionTimesTableBodyEl = document.getElementById('connectionTimesTableBody');
+        const percentageServedTableBodyEl = document.getElementById('percentageServedTableBody');
+
+        // Chart instances
+        let responseTimeDistributionChartInstance = null;
+        let connectionTimesBarChartInstance = null;
+
+        Chart.defaults.font.family = 'Inter, sans-serif';
+
+
+        parseButton.addEventListener('click', () => {
+            const outputText = abOutputTextarea.value.trim();
+            if (!outputText) {
+                showError("请输入 ab 输出内容。");
+                resultsDiv.classList.add('hidden');
+                return;
+            }
+            try {
+                const parsedData = parseAbOutput(outputText);
+                displayResults(parsedData);
+                createCharts(parsedData);
+                hideError();
+                resultsDiv.classList.remove('hidden');
+            } catch (error) {
+                console.error("解析错误:", error);
+                showError(`解析 ab 输出时发生错误: ${error.message}. 请确保输入的是有效的 ab 报告。`);
+                resultsDiv.classList.add('hidden');
+                if (responseTimeDistributionChartInstance) responseTimeDistributionChartInstance.destroy();
+                if (connectionTimesBarChartInstance) connectionTimesBarChartInstance.destroy();
+                responseTimeDistributionChartInstance = null;
+                connectionTimesBarChartInstance = null;
+            }
+        });
+
+        function showError(message) {
+            errorMessageDiv.textContent = message;
+            errorMessageDiv.classList.remove('hidden');
+        }
+
+        function hideError() {
+            errorMessageDiv.classList.add('hidden');
+        }
+
+        function parseAbOutput(text) {
+            const lines = text.split('\n');
+            const data = {
+                connectionTimes: {},
+                percentageServed: []
+            };
+            let inConnectionTimesSection = false;
+            let inPercentageSection = false;
+
+            lines.forEach(line => {
+                line = line.trim();
+                let match;
+
+                if (line.startsWith('Server Software:')) data.serverSoftware = line.substring('Server Software:'.length).trim();
+                else if (line.startsWith('Server Hostname:')) data.serverHostname = line.substring('Server Hostname:'.length).trim();
+                else if (line.startsWith('Server Port:')) data.serverPort = line.substring('Server Port:'.length).trim();
+                else if (line.startsWith('Document Path:')) data.documentPath = line.substring('Document Path:'.length).trim();
+                else if (match = line.match(/^Document Length:\s*(\d+)\s*bytes$/)) data.documentLength = `${match[1]} bytes`;
+                else if (match = line.match(/^Concurrency Level:\s*(\d+)$/)) data.concurrencyLevel = match[1];
+                else if (match = line.match(/^Time taken for tests:\s*([\d.]+)\s*seconds$/)) data.timeTaken = match[1];
+                else if (match = line.match(/^Complete requests:\s*(\d+)$/)) data.completeRequests = match[1];
+                else if (match = line.match(/^Failed requests:\s*(\d+)/)) data.failedRequests = match[1];
+                else if (match = line.match(/^Requests per second:\s*([\d.]+)\s*\[#\/sec\]\s*\(mean\)$/)) data.requestsPerSecond = match[1];
+                else if (match = line.match(/^Time per request:\s*([\d.]+)\s*\[ms\]\s*\(mean\)$/)) data.timePerRequestConcurrent = match[1];
+                else if (match = line.match(/^Time per request:\s*([\d.]+)\s*\[ms\]\s*\(mean, across all concurrent requests\)$/)) data.timePerRequestSingle = match[1];
+                else if (match = line.match(/^Transfer rate:\s*([\d.]+)\s*\[Kbytes\/sec\] received$/)) data.transferRate = match[1];
+
+                if (line.startsWith('Percentage of the requests served within a certain time (ms)')) {
+                    inPercentageSection = true;
+                    inConnectionTimesSection = false;
+                    return;
+                }
+                if (line.startsWith('Connection Times (ms)')) {
+                    inConnectionTimesSection = true;
+                    inPercentageSection = false;
+                    return;
+                }
+
+                if (inConnectionTimesSection && (line.startsWith('Connect:') || line.startsWith('Processing:') || line.startsWith('Waiting:') || line.startsWith('Total:'))) {
+                    const parts = line.split(/\s+/).filter(Boolean);
+                    const metricName = parts[0].replace(':', '');
+                    let parsedMetrics = {};
+                    if (parts.length >= 6 && parts[2].includes('[+/-')) {
+                        const meanSd = parts[2].match(/([\d.]+)\+\/-([\d.]+)/);
+                        parsedMetrics = {
+                            min: parseFloat(parts[1]),
+                            mean: meanSd ? parseFloat(meanSd[1]) : parseFloat(parts[2]),
+                            sd: meanSd ? parseFloat(meanSd[2]) : null,
+                            median: parseFloat(parts[4]),
+                            max: parseFloat(parts[5])
+                        };
+                    } else if (parts.length >= 5) {
+                        if (isNaN(parseFloat(parts[3])) || parts[3].includes('[') ) {
+                             parsedMetrics = {
+                                min: parseFloat(parts[1]),
+                                mean: parseFloat(parts[2]),
+                                sd: null,
+                                median: parseFloat(parts[3]),
+                                max: parseFloat(parts[4])
+                            };
+                        } else {
+                            parsedMetrics = {
+                                min: parseFloat(parts[1]),
+                                mean: parseFloat(parts[2]),
+                                sd: parseFloat(parts[3]),
+                                median: parseFloat(parts[4]),
+                                max: parts[5] ? parseFloat(parts[5]) : parseFloat(parts[4]) // Fallback for max if 5th element is missing
+                            };
+                             if (parts.length === 5 && !isNaN(parseFloat(parts[4]))) parsedMetrics.max = parseFloat(parts[4]);
+                        }
+                    }
+                     if (Object.keys(parsedMetrics).length > 0) {
+                        data.connectionTimes[metricName] = parsedMetrics;
+                    }
+                } else if (inPercentageSection && (match = line.match(/^\s*(\d+)%\s+(\d+)\s*$/))) {
+                    data.percentageServed.push({
+                        percentage: parseInt(match[1]),
+                        time: parseInt(match[2])
+                    });
+                } else if (line.trim() === "" && (inConnectionTimesSection || inPercentageSection)) {
+                    inConnectionTimesSection = false;
+                    inPercentageSection = false;
+                }
+            });
+            if (!data.timePerRequestSingle && data.timePerRequestConcurrent && !text.includes("mean, across all concurrent requests")) {
+                // If the specific "mean, across all concurrent requests" line is NOT present,
+                // then the line matched by `timePerRequestConcurrent` (the broader one)
+                // is actually the "Time per request (mean)" which is equivalent to "single" in this context.
+                // And the "Time per request (mean, across all concurrent requests)" should be considered missing or N/A.
+                data.timePerRequestSingle = data.timePerRequestConcurrent;
+                data.timePerRequestConcurrent = null; // Or some indicator for N/A
+            } else if (!data.timePerRequestConcurrent && data.timePerRequestSingle) {
+                 // If only "mean, across all concurrent requests" is found, then the general "Time per request (mean)" is missing.
+                 // This case is less likely with the current regex but good to be aware of.
+            }
+
+
+            if (!data.requestsPerSecond && !data.completeRequests) {
+                throw new Error("未能从输入中提取到关键的 ab 指标。请检查输入格式。");
+            }
+            return data;
+        }
+
+        function displayResults(data) {
+            const na = '-';
+            serverSoftwareEl.textContent = data.serverSoftware || na;
+            serverHostnameEl.textContent = data.serverHostname || na;
+            serverPortEl.textContent = data.serverPort || na;
+            documentPathEl.textContent = data.documentPath || na;
+            documentLengthEl.textContent = data.documentLength || na;
+            concurrencyLevelEl.textContent = data.concurrencyLevel || na;
+            timeTakenEl.textContent = data.timeTaken || na;
+            completeRequestsEl.textContent = data.completeRequests || na;
+            failedRequestsEl.textContent = data.failedRequests || '0';
+            requestsPerSecondEl.textContent = data.requestsPerSecond || na;
+            timePerRequestConcurrentEl.textContent = data.timePerRequestConcurrent || na;
+            timePerRequestSingleEl.textContent = data.timePerRequestSingle || na;
+            transferRateEl.textContent = data.transferRate || na;
+
+            connectionTimesTableBodyEl.innerHTML = '';
+            const connectionMetricsOrder = ['Connect', 'Processing', 'Waiting', 'Total'];
+            let foundConnectionData = false;
+            connectionMetricsOrder.forEach(metricName => {
+                const metricData = data.connectionTimes[metricName];
+                if (metricData) {
+                    foundConnectionData = true;
+                    const row = `
+                        <tr class="hover:bg-slate-50/50 transition-colors duration-150">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-800">${metricName}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">${metricData.min ?? na}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">${metricData.mean ?? na}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">${metricData.sd ?? na}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">${metricData.median ?? na}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">${metricData.max ?? na}</td>
+                        </tr>
+                    `;
+                    connectionTimesTableBodyEl.innerHTML += row;
+                }
+            });
+            if (!foundConnectionData) {
+                connectionTimesTableBodyEl.innerHTML = `<tr><td colspan="6" class="text-center py-10 text-slate-500">未找到连接时间数据</td></tr>`;
+            }
+
+            percentageServedTableBodyEl.innerHTML = '';
+            if (data.percentageServed && data.percentageServed.length > 0) {
+                data.percentageServed.forEach(item => {
+                    const row = `
+                        <tr class="hover:bg-slate-50/50 transition-colors duration-150">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-800">${item.percentage}%</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">${item.time}</td>
+                        </tr>
+                    `;
+                    percentageServedTableBodyEl.innerHTML += row;
+                });
+            } else {
+                 percentageServedTableBodyEl.innerHTML = `<tr><td colspan="2" class="text-center py-10 text-slate-500">未找到响应时间分布数据</td></tr>`;
+            }
+        }
+
+        function createCharts(data) {
+            const chartFontColor = '#334155'; // slate-700
+            const gridColor = '#e2e8f0'; // slate-200
+
+            // 1. 响应时间分布折线图 (moved to be under its table)
+            const rtdCtx = document.getElementById('responseTimeDistributionChart').getContext('2d');
+            if (responseTimeDistributionChartInstance) {
+                responseTimeDistributionChartInstance.destroy();
+            }
+            if (data.percentageServed && data.percentageServed.length > 0) {
+                const sortedPercentageData = [...data.percentageServed].sort((a, b) => a.time - b.time);
+                responseTimeDistributionChartInstance = new Chart(rtdCtx, {
+                    type: 'line',
+                    data: {
+                        labels: sortedPercentageData.map(item => item.time),
+                        datasets: [{
+                            label: '请求完成百分比 (%)',
+                            data: sortedPercentageData.map(item => item.percentage),
+                            borderColor: 'rgb(59, 130, 246)',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            tension: 0.2,
+                            fill: true,
+                            pointBackgroundColor: 'rgb(59, 130, 246)',
+                            pointBorderColor: '#fff',
+                            pointHoverBackgroundColor: '#fff',
+                            pointHoverBorderColor: 'rgb(59, 130, 246)'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                title: { display: true, text: '响应时间 (ms)', color: chartFontColor, font: { weight: '500'} },
+                                ticks: { color: chartFontColor },
+                                grid: { color: gridColor, drawOnChartArea: false }
+                            },
+                            y: {
+                                title: { display: true, text: '请求完成百分比 (%)', color: chartFontColor, font: { weight: '500'} },
+                                beginAtZero: true,
+                                max: 100,
+                                ticks: { color: chartFontColor, stepSize: 10 },
+                                grid: { color: gridColor }
+                            }
+                        },
+                        plugins: {
+                            legend: { labels: { color: chartFontColor } },
+                            title: { display: true, text: '响应时间分布图', color: chartFontColor, font: { size: 16, weight: '600' } }, // Updated title
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                                titleFont: { weight: '600' },
+                                bodySpacing: 4,
+                                padding: 10,
+                                cornerRadius: 4,
+                                displayColors: false,
+                            }
+                        }
+                    }
+                });
+            } else {
+                rtdCtx.clearRect(0, 0, rtdCtx.canvas.width, rtdCtx.canvas.height);
+                rtdCtx.font = "16px Inter"; rtdCtx.fillStyle = "#64748b";
+                rtdCtx.textAlign = "center";
+                rtdCtx.fillText("无响应时间分布数据", rtdCtx.canvas.width / 2, rtdCtx.canvas.height / 2);
+            }
+
+            // 2. 连接时间条形图 (moved to be under its table)
+            const ctCtx = document.getElementById('connectionTimesBarChart').getContext('2d');
+            if (connectionTimesBarChartInstance) {
+                connectionTimesBarChartInstance.destroy();
+            }
+            const connectionMetricsOrder = ['Connect', 'Processing', 'Waiting', 'Total'];
+            const labels = [];
+            const datasets = [
+                { label: '最小 (min)', data: [], backgroundColor: 'rgba(59, 130, 246, 0.7)', borderColor: 'rgb(59, 130, 246)' },
+                { label: '平均 (mean)', data: [], backgroundColor: 'rgba(16, 185, 129, 0.7)', borderColor: 'rgb(16, 185, 129)' },
+                { label: '中位数 (median)', data: [], backgroundColor: 'rgba(245, 158, 11, 0.7)', borderColor: 'rgb(245, 158, 11)' },
+                { label: '最大 (max)', data: [], backgroundColor: 'rgba(239, 68, 68, 0.7)', borderColor: 'rgb(239, 68, 68)' }
+            ];
+            let hasConnectionTimeData = false;
+            connectionMetricsOrder.forEach(metricName => {
+                const metricData = data.connectionTimes[metricName];
+                if (metricData) {
+                    hasConnectionTimeData = true;
+                    labels.push(metricName);
+                    datasets[0].data.push(metricData.min ?? 0);
+                    datasets[1].data.push(metricData.mean ?? 0);
+                    datasets[2].data.push(metricData.median ?? 0);
+                    datasets[3].data.push(metricData.max ?? 0);
+                }
+            });
+
+            if (hasConnectionTimeData) {
+                connectionTimesBarChartInstance = new Chart(ctCtx, {
+                    type: 'bar',
+                    data: { labels: labels, datasets: datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { ticks: { color: chartFontColor }, grid: { display: false } },
+                            y: {
+                                beginAtZero: true,
+                                title: { display: true, text: '时间 (ms)', color: chartFontColor, font: { weight: '500'} },
+                                ticks: { color: chartFontColor },
+                                grid: { color: gridColor }
+                            }
+                        },
+                        plugins: {
+                            legend: { position: 'top', labels: { color: chartFontColor } },
+                            title: { display: true, text: '连接时间细分图', color: chartFontColor, font: { size: 16, weight: '600' } }, // Updated title
+                             tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                                titleFont: { weight: '600' },
+                                bodySpacing: 4,
+                                padding: 10,
+                                cornerRadius: 4,
+                            }
+                        }
+                    }
+                });
+            } else {
+                ctCtx.clearRect(0, 0, ctCtx.canvas.width, ctCtx.canvas.height);
+                ctCtx.font = "16px Inter"; ctCtx.fillStyle = "#64748b";
+                ctCtx.textAlign = "center";
+                ctCtx.fillText("无连接时间数据", ctCtx.canvas.width / 2, ctCtx.canvas.height / 2);
+            }
+        }
+
+        const sampleAbOutput = `This is ApacheBench, Version 2.3 <$Revision: 1903618 $>
+Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
+Licensed to The Apache Software Foundation, http://www.apache.org/
+
+Benchmarking localhost (be patient)
+Completed 100 requests
+Completed 200 requests
+Completed 300 requests
+Completed 400 requests
+Completed 500 requests
+Finished 500 requests
+
+
+Server Software:        Apache/2.4.54
+Server Hostname:        localhost
+Server Port:            80
+
+Document Path:          /index.html
+Document Length:        3450 bytes
+
+Concurrency Level:      10
+Time taken for tests:   0.234 seconds
+Complete requests:      500
+Failed requests:        0
+Total transferred:      1805500 bytes
+HTML transferred:       1725000 bytes
+Requests per second:    2133.94 [#/sec] (mean)
+Time per request:       4.686 [ms] (mean)
+Time per request:       0.469 [ms] (mean, across all concurrent requests)
+Transfer rate:          7510.29 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    0   0.0      0       0
+Processing:     1    4   1.4      4       9
+Waiting:        1    2   1.2      2       8
+Total:          2    4   1.4      4       9
+
+Percentage of the requests served within a certain time (ms)
+  50%      4
+  66%      5
+  75%      5
+  80%      6
+  90%      7
+  95%      7
+  98%      8
+  99%      9
+ 100%      9 (longest request)`;
+        // abOutputTextarea.value = sampleAbOutput;
+    </script>
+</body>
+</html>
