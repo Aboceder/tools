@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>R2 文件管理器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        #drop-zone { border: 2px dashed #ccc; transition: all 0.3s ease; }
+        #drop-zone.drag-over { border-color: #34d399; background-color: #f0fdf4; }
+        .file-card { transition: all 0.2s ease-in-out; }
+        .file-card:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-6xl">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-teal-600">R2 文件管理器</h1>
+            <p class="text-gray-500 mt-2">一个简单的、可交互的前端界面</p>
+        </header>
+
+        <main>
+            <!-- Upload Area -->
+            <section id="upload-section" class="mb-8">
+                <div id="drop-zone" class="relative rounded-lg p-8 text-center cursor-pointer bg-white shadow-sm">
+                    <input type="file" id="file-input" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                    <div class="flex flex-col items-center justify-center">
+                        <svg class="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                        <p class="mt-4 text-lg text-gray-600">拖拽文件到此处，或 <span class="font-medium text-teal-500">点击选择</span></p>
+                        <p class="mt-1 text-sm text-gray-500">支持智能识别歌曲与封面</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- File List -->
+            <section id="file-list-section">
+                <h2 class="text-2xl font-bold mb-4">文件列表</h2>
+                <div id="file-list" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                    <!-- File cards will be inserted here by JavaScript -->
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- File Card Template -->
+    <template id="file-card-template">
+        <div class="file-card bg-white rounded-lg shadow-sm overflow-hidden">
+            <div class="preview h-40 flex items-center justify-center bg-gray-100 text-gray-300">
+                <!-- Preview content (image or icon) -->
+            </div>
+            <div class="p-4">
+                <p class="title font-semibold text-gray-800 truncate" title="File Name">File Name</p>
+                <p class="details text-sm text-gray-500">Details</p>
+                <div class="actions mt-4 flex justify-end">
+                    <button class="delete-btn text-red-500 hover:text-red-700 font-medium text-sm">删除</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // --- CONFIGURATION ---
+    // IMPORTANT: Change this to http://localhost:8787 for local development
+    const API_BASE_URL = 'https://cloudflare-r2-worker.aboceder.workers.dev';
+
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const fileListContainer = document.getElementById('file-list');
+    const fileCardTemplate = document.getElementById('file-card-template');
+
+    // --- UTILITY FUNCTIONS ---
+    const showLoading = (title) => Swal.fire({ title, allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    const showToast = (icon, title) => Swal.fire({ icon, title, toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, timerProgressBar: true });
+    const formatBytes = (bytes, decimals = 2) => {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const dm = decimals < 0 ? 0 : decimals;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    };
+
+    // --- API CALLS ---
+    const api = {
+        async getFiles() {
+            const response = await fetch(`${API_BASE_URL}/files`);
+            if (!response.ok) throw new Error('无法获取文件列表');
+            return response.json();
+        },
+        async upload(formData) {
+            const response = await fetch(`${API_BASE_URL}/upload`, { method: 'POST', body: formData });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: '上传失败' }));
+                throw new Error(errorData.message);
+            }
+            return response.json();
+        },
+        async deleteFile(key) {
+            const response = await fetch(`${API_BASE_URL}/files/${key}`, { method: 'DELETE' });
+            if (!response.ok) throw new Error('删除失败');
+            return response.json();
+        }
+    };
+
+    // --- RENDERING ---
+    const renderFiles = (files) => {
+        fileListContainer.innerHTML = '';
+        if (files.length === 0) {
+            fileListContainer.innerHTML = `<p class="text-gray-500 col-span-full text-center">暂无文件，请上传。</p>`;
+            return;
+        }
+        files.forEach(file => {
+            const card = fileCardTemplate.content.cloneNode(true).firstElementChild;
+            const previewEl = card.querySelector('.preview');
+            const titleEl = card.querySelector('.title');
+            const detailsEl = card.querySelector('.details');
+            const deleteBtn = card.querySelector('.delete-btn');
+
+            titleEl.textContent = file.details.title || file.key;
+            titleEl.title = file.key;
+            deleteBtn.dataset.key = file.key;
+
+            switch (file.objectType) {
+                case 'song':
+                    previewEl.innerHTML = `<svg class="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM21 16c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>`;
+                    detailsEl.textContent = `${file.details.artist || '未知艺术家'} - ${formatBytes(file.size)}`;
+                    if (file.details.coverUrl) {
+                        previewEl.innerHTML = `<img src="${file.details.coverUrl}" class="w-full h-full object-cover" alt="Cover">`;
+                    }
+                    break;
+                case 'image':
+                    previewEl.innerHTML = `<img src="${file.url}" class="w-full h-full object-cover" alt="${file.key}">`;
+                    detailsEl.textContent = formatBytes(file.size);
+                    break;
+
+                default: // genericFile
+                    previewEl.innerHTML = `<svg class="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>`;
+                    detailsEl.textContent = formatBytes(file.size);
+                    break;
+            }
+            fileListContainer.appendChild(card);
+        });
+    };
+
+    const loadAndRender = async () => {
+        try {
+            const data = await api.getFiles();
+            renderFiles(data.objects);
+        } catch (error) {
+            showToast('error', error.message);
+        }
+    };
+
+    // --- EVENT HANDLERS ---
+    const handleFileSelect = (files) => {
+        const fileArray = Array.from(files);
+        if (fileArray.length === 0) return;
+
+        // Smart Logic: Detect song + cover
+        if (fileArray.length === 2) {
+            const audioFile = fileArray.find(f => f.type.startsWith('audio/'));
+            const imageFile = fileArray.find(f => f.type.startsWith('image/'));
+
+            if (audioFile && imageFile) {
+                Swal.fire({
+                    title: '上传歌曲？',
+                    text: `您似乎正在上传一首歌曲 (${audioFile.name}) 及其封面 (${imageFile.name})。`,
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: '是的，作为歌曲上传',
+                    cancelButtonText: '作为单独文件上传'
+                }).then(result => {
+                    if (result.isConfirmed) {
+                        uploadSong(audioFile, imageFile);
+                    } else if (result.dismiss === Swal.DismissReason.cancel) {
+                        uploadGenericFile(audioFile);
+                        uploadGenericFile(imageFile, 'image');
+                    }
+                });
+                return; // Stop further processing
+            }
+        }
+
+        // Default: Upload all files individually
+        fileArray.forEach(file => {
+            if (file.type.startsWith('image/')) uploadGenericFile(file, 'image');
+            else if (file.type.startsWith('audio/')) uploadSong(file);
+            else uploadGenericFile(file);
+        });
+    };
+
+    const uploadGenericFile = async (file, type = 'genericFile') => {
+        const formData = new FormData();
+        formData.append('objectType', type);
+        formData.append('file', file);
+        
+        showLoading(`正在上传 ${file.name}...`);
+        try {
+            await api.upload(formData);
+            showToast('success', '上传成功！');
+            loadAndRender();
+        } catch (error) {
+            Swal.close();
+            showToast('error', `上传失败: ${error.message}`);
+        }
+    };
+
+    const uploadSong = async (audioFile, coverFile = null) => {
+        const { value: formValues } = await Swal.fire({
+            title: '歌曲信息',
+            html:
+                `<input id="swal-title" class="swal2-input" placeholder="歌曲名 (可选)" value="${audioFile.name.split('.').slice(0, -1).join('.') || ''}">` +
+                `<input id="swal-artist" class="swal2-input" placeholder="艺术家 (可选)">`,
+            focusConfirm: false,
+            preConfirm: () => ({
+                title: document.getElementById('swal-title').value,
+                artist: document.getElementById('swal-artist').value
+            })
+        });
+
+        if (formValues) {
+            const formData = new FormData();
+            formData.append('objectType', 'song');
+            formData.append('file', audioFile);
+            if (coverFile) formData.append('cover', coverFile);
+            if (formValues.title) formData.append('title', formValues.title);
+            if (formValues.artist) formData.append('artist', formValues.artist);
+
+            showLoading(`正在上传歌曲 ${audioFile.name}...`);
+            try {
+                await api.upload(formData);
+                showToast('success', '歌曲上传成功！');
+                loadAndRender();
+            } catch (error) {
+                Swal.close();
+                showToast('error', `上传失败: ${error.message}`);
+            }
+        }
+    };
+
+    // --- INITIALIZATION ---
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('drag-over');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        handleFileSelect(e.dataTransfer.files);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        handleFileSelect(e.target.files);
+        // Reset input to allow uploading the same file again
+        e.target.value = '';
+    });
+
+    fileListContainer.addEventListener('click', (e) => {
+        const deleteBtn = e.target.closest('.delete-btn');
+        if (deleteBtn) {
+            const key = deleteBtn.dataset.key;
+            Swal.fire({
+                title: '确认删除？',
+                text: `您确定要删除文件 "${key}" 吗？此操作无法撤销。`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                confirmButtonText: '确认删除',
+                cancelButtonText: '取消'
+            }).then(async (result) => {
+                if (result.isConfirmed) {
+                    showLoading('正在删除...');
+                    try {
+                        await api.deleteFile(key);
+                        showToast('success', '删除成功！');
+                        loadAndRender();
+                    } catch (error) {
+                        Swal.close();
+                        showToast('error', error.message);
+                    }
+                }
+            });
+        }
+    });
+
+    // Initial load
+    loadAndRender();
+});
+</script>
+
+</body>
+</html>

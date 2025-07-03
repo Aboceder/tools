@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="public/icon.svg" type="image/x-icon">
+    <title>文本转语音 - Tooooools</title>
+    <style>
+        :root {
+            --background: hsl(0, 0%, 100%);
+            --foreground: hsl(240, 10%, 3.9%);
+            --card: hsl(0, 0%, 100%);
+            --card-foreground: hsl(240, 10%, 3.9%);
+            --popover: hsl(0, 0%, 100%);
+            --popover-foreground: hsl(240, 10%, 3.9%);
+            --primary: hsl(240, 5.9%, 10%);
+            --primary-foreground: hsl(0, 0%, 98%);
+            --secondary: hsl(240, 4.8%, 95.9%);
+            --secondary-foreground: hsl(240, 5.9%, 10%);
+            --muted: hsl(240, 4.8%, 95.9%);
+            --muted-foreground: hsl(240, 3.8%, 46%);
+            --accent: hsl(240, 4.8%, 95.9%);
+            --accent-foreground: hsl(240, 5.9%, 10%);
+            --destructive: hsl(0, 84.2%, 60.2%);
+            --destructive-foreground: hsl(0, 0%, 98%);
+            --border: hsl(240, 5.9%, 90%);
+            --input: hsl(240, 5.9%, 90%);
+            --ring: hsl(240, 5.9%, 10%);
+            --radius: 0.5rem;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            background-color: var(--background);
+            color: var(--foreground);
+            margin: 0;
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 800px; /* Adjusted for a more focused form layout */
+            margin: 0 auto;
+            padding: 0 1.5rem;
+            width: 100%;
+        }
+
+        header {
+            background-color: var(--card);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 0;
+            margin-bottom: 2rem; /* Add some space below header */
+        }
+
+        header .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 0;
+        }
+        header h1 a {
+            color: var(--foreground);
+            text-decoration: none;
+        }
+
+        nav a.nav-link {
+            color: var(--muted-foreground);
+            text-decoration: none;
+            margin-left: 1.5rem;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: color 0.2s ease-in-out;
+        }
+
+        nav a.nav-link:hover,
+        nav a.nav-link.active {
+            color: var(--foreground);
+        }
+
+        main {
+            flex-grow: 1;
+            padding: 2rem 0;
+        }
+        
+        .tts-form-container {
+            background-color: var(--card);
+            padding: 2rem;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        .tts-form-container h2 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            margin-top: 0;
+            margin-bottom: 1.5rem;
+            text-align: center;
+            color: var(--card-foreground);
+        }
+
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: var(--card-foreground);
+            font-size: 0.875rem;
+        }
+
+        .form-group input[type="text"],
+        .form-group input[type="number"],
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 0.65rem 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background-color: var(--background);
+            color: var(--foreground);
+            font-size: 1rem;
+            box-sizing: border-box;
+            transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        
+        .form-group input[type="text"]:focus,
+        .form-group input[type="number"]:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px hsla(var(--ring), 0.5);
+        }
+        
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .form-group input[type="checkbox"] {
+            margin-right: 0.5rem;
+            accent-color: var(--primary);
+        }
+        
+        .form-row {
+            display: flex;
+            gap: 1rem;
+        }
+        .form-row .form-group {
+            flex: 1;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            border-radius: var(--radius);
+            text-decoration: none;
+            font-weight: 500;
+            transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out, opacity 0.2s ease-in-out;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: var(--primary-foreground);
+        }
+
+        .btn-primary:hover {
+            background-color: hsl(240, 5.9%, 20%); /* Darken primary */
+        }
+        .btn-primary:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .audio-output {
+            margin-top: 2rem;
+            padding: 1rem;
+            background-color: var(--secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+        }
+        .audio-output h3 {
+            margin-top:0;
+            margin-bottom: 0.75rem;
+            color: var(--secondary-foreground);
+        }
+        .audio-output audio {
+            width: 100%;
+        }
+        .status-message {
+            margin-top: 1rem;
+            padding: 0.75rem;
+            border-radius: var(--radius);
+            font-size: 0.9rem;
+        }
+        .status-message.error {
+            background-color: hsla(0, 84.2%, 60.2%, 0.1);
+            color: var(--destructive);
+            border: 1px solid hsla(0, 84.2%, 60.2%, 0.3);
+        }
+        .status-message.success {
+            background-color: hsla(142, 70.6%, 45.3%, 0.1); /* A green accent */
+            color: hsl(142, 70.6%, 35.3%);
+            border: 1px solid hsla(142, 70.6%, 45.3%, 0.3);
+        }
+
+
+        footer {
+            text-align: center;
+            padding: 2rem 0;
+            border-top: 1px solid var(--border);
+            margin-top: 3rem; /* Ensure space from content */
+            background-color: var(--card);
+        }
+
+        footer p {
+            color: var(--muted-foreground);
+            font-size: 0.9rem;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1><a href="index.html">Tooooools</a></h1>
+            <nav>
+                <a href="index.html" class="nav-link">首页</a>
+                <a href="tts.html" class="nav-link active">文本转语音</a>
+                <!-- Add other links as needed -->
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        <div class="container">
+            <div class="tts-form-container">
+                <h2>文本转语音 (TTS)</h2>
+                <form id="ttsForm">
+                    <div class="form-group">
+                        <label for="apiKey">API Key (Authorization: Bearer)</label>
+                        <input type="text" id="apiKey" name="apiKey" placeholder="输入您的 API Key" required>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="model">模型 (model)</label>
+                            <select id="model" name="model" required>
+                                <option value="FunAudioLLM/CosyVoice2-0.5B">FunAudioLLM/CosyVoice2-0.5B</option>
+                                <!-- Add other models if available -->
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="voice">音色 (voice)</label>
+                            <select id="voice" name="voice" required>
+                                <option value="FunAudioLLM/CosyVoice2-0.5B:alex">Alex</option>
+                                <option value="FunAudioLLM/CosyVoice2-0.5B:anna">Anna</option>
+                                <option value="FunAudioLLM/CosyVoice2-0.5B:bella">Bella</option>
+                                <option value="FunAudioLLM/CosyVoice2-0.5B:benjamin">Benjamin</option>
+                                <option value="FunAudioLLM/CosyVoice2-0.5B:charles">Charles</option>
+                                <option value="FunAudioLLM/CosyVoice2-0.5B:claire">Claire</option>
+                                <option value="FunAudioLLM/CosyVoice2-0.5B:david">David</option>
+                                <option value="FunAudioLLM/CosyVoice2-0.5B:diana">Diana</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="input">输入文本 (input)</label>
+                        <textarea id="input" name="input" rows="4" placeholder="例如：Can you say it with a happy emotion? <|endofprompt|> 今天天气真好！[laughter]" required>Can you say it with a happy emotion? <|endofprompt|> 我很高兴，春节快到了！</textarea>
+                        <small style="color: var(--muted-foreground); font-size: 0.75rem;">自然语言指令后加 <code style="background: var(--muted); padding: 2px 4px; border-radius: 3px;">&lt;|endofprompt|&gt;</code>，可使用 <code style="background: var(--muted); padding: 2px 4px; border-radius: 3px;">[laughter]</code>, <code style="background: var(--muted); padding: 2px 4px; border-radius: 3px;">[breath]</code> 等标记。</small>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="response_format">输出格式 (response_format)</label>
+                            <select id="response_format" name="response_format">
+                                <option value="mp3" selected>mp3</option>
+                                <option value="opus">opus</option>
+                                <option value="wav">wav</option>
+                                <option value="pcm">pcm</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="sample_rate">采样率 (sample_rate)</label>
+                            <input type="number" id="sample_rate" name="sample_rate" placeholder="例如 32000, 44100">
+                             <small style="color: var(--muted-foreground); font-size: 0.75rem;">mp3: 32k, 44.1k (默认44.1k). wav/pcm: 8k-44.1k (默认44.1k). opus: 48k.</small>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                         <div class="form-group">
+                            <label for="speed">语速 (speed)</label>
+                            <input type="number" id="speed" name="speed" min="0.25" max="4.0" step="0.05" value="1.0" placeholder="0.25 - 4.0 (默认 1.0)">
+                        </div>
+                        <div class="form-group">
+                            <label for="gain">增益 (gain)</label>
+                            <input type="number" id="gain" name="gain" min="-10" max="10" step="0.1" value="0" placeholder="-10 - 10 (默认 0)">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center;">
+                            <input type="checkbox" id="stream" name="stream" checked>
+                            流式传输 (stream)
+                        </label>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" id="submitBtn">生成语音</button>
+                </form>
+
+                <div id="statusMessage" class="status-message" style="display: none;"></div>
+                
+                <div id="audioOutput" class="audio-output" style="display: none;">
+                    <h3>生成的音频:</h3>
+                    <audio id="audioPlayer" controls></audio>
+                    <a id="downloadLink" href="#" download="audio.mp3" style="display:none; margin-top: 0.5rem; font-size: 0.9rem;">下载音频</a>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+             <p>&copy; 2025 Tooooools导航站. 保留所有权利.</p>
+        </div>
+    </footer>
+
+    <script>
+        const ttsForm = document.getElementById('ttsForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const apiKeyInput = document.getElementById('apiKey');
+        const modelSelect = document.getElementById('model');
+        const voiceSelect = document.getElementById('voice');
+        const inputTextArea = document.getElementById('input');
+        const responseFormatSelect = document.getElementById('response_format');
+        const sampleRateInput = document.getElementById('sample_rate');
+        const speedInput = document.getElementById('speed');
+        const gainInput = document.getElementById('gain');
+        const streamCheckbox = document.getElementById('stream');
+        
+        const audioOutputDiv = document.getElementById('audioOutput');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const downloadLink = document.getElementById('downloadLink');
+        const statusMessageDiv = document.getElementById('statusMessage');
+
+        // 根据选择的 response_format 动态更新 sample_rate 的 placeholder 和默认值
+        responseFormatSelect.addEventListener('change', function() {
+            const format = this.value;
+            if (format === 'opus') {
+                sampleRateInput.placeholder = "48000";
+                sampleRateInput.value = "48000";
+            } else if (format === 'mp3') {
+                 sampleRateInput.placeholder = "例如 32000, 44100 (默认 44100)";
+                 if (!sampleRateInput.value || !['32000', '44100'].includes(sampleRateInput.value)) {
+                    sampleRateInput.value = "44100";
+                 }
+            } else if (format === 'wav' || format === 'pcm') {
+                sampleRateInput.placeholder = "例如 8000-44100 (默认 44100)";
+                 if (!sampleRateInput.value) { // Only set default if empty
+                    sampleRateInput.value = "44100";
+                 }
+            } else {
+                sampleRateInput.placeholder = "根据格式自动选择";
+            }
+        });
+        // Initial call to set placeholder based on default
+        responseFormatSelect.dispatchEvent(new Event('change'));
+
+
+        ttsForm.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            submitBtn.disabled = true;
+            submitBtn.textContent = '生成中...';
+            statusMessageDiv.style.display = 'none';
+            statusMessageDiv.className = 'status-message'; // Reset classes
+            audioOutputDiv.style.display = 'none';
+
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey) {
+                showStatus('API Key 不能为空。', 'error');
+                submitBtn.disabled = false;
+                submitBtn.textContent = '生成语音';
+                return;
+            }
+
+            const requestBody = {
+                model: modelSelect.value,
+                input: inputTextArea.value,
+                voice: voiceSelect.value,
+                response_format: responseFormatSelect.value,
+                stream: streamCheckbox.checked
+            };
+
+            if (sampleRateInput.value) {
+                requestBody.sample_rate = parseInt(sampleRateInput.value);
+            }
+            if (speedInput.value) {
+                requestBody.speed = parseFloat(speedInput.value);
+            }
+            if (gainInput.value) {
+                requestBody.gain = parseFloat(gainInput.value);
+            }
+            
+            // API Endpoint - 请根据实际情况修改
+            const apiUrl = 'https://api.siliconflow.cn/v1/audio/speech'; // 示例 URL，实际请替换
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json',
+                        'Accept': `audio/${requestBody.response_format}` // Important for server to know expected response
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!response.ok) {
+                    let errorData;
+                    try {
+                        errorData = await response.json(); // Try to parse JSON error
+                    } catch (e) {
+                        errorData = await response.text(); // Fallback to text error
+                    }
+                    console.error('API Error Response:', errorData);
+                    throw new Error(`API 请求失败: ${response.status} ${response.statusText}. ${typeof errorData === 'string' ? errorData : JSON.stringify(errorData)}`);
+                }
+                
+                showStatus('音频生成成功！正在加载...', 'success');
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                
+                audioPlayer.src = audioUrl;
+                audioPlayer.type = `audio/${requestBody.response_format}`;
+                
+                downloadLink.href = audioUrl;
+                downloadLink.download = `audio.${requestBody.response_format}`;
+                
+                audioOutputDiv.style.display = 'block';
+                downloadLink.style.display = 'inline-block';
+                
+            } catch (error) {
+                console.error('请求错误:', error);
+                showStatus(`发生错误: ${error.message}`, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '生成语音';
+            }
+        });
+
+        function showStatus(message, type = 'info') {
+            statusMessageDiv.textContent = message;
+            statusMessageDiv.className = `status-message ${type}`; // Add type class for styling
+            statusMessageDiv.style.display = 'block';
+        }
+
+    </script>
+</body>
+</html>
